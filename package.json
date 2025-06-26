@@ -1,0 +1,14 @@
+{
+  "name": "chat-bot",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=packages/frontend\" \"npm run dev --workspace=packages/backend\"",
+    "install": "npm install --workspaces"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
