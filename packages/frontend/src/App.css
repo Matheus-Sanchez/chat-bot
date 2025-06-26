@@ -1,51 +1,200 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+/* App.css */
+
+/* =================================
+   1. Definição das Variáveis de Tema
+   ================================= */
+
+:root {
+  /* Tema Claro (Padrão) */
+  --bg-color: #ffffff; /* Fundo principal */
+  --text-color: #1f2937; /* Texto principal */
+  --panel-bg-color: #f9fafb; /* Fundo de painéis, como a janela de chat */
+  --border-color: #e5e7eb; /* Cor das bordas */
+  --input-bg-color: #ffffff; /* Fundo do campo de input */
+  --input-text-color: #111827; /* Texto do campo de input */
+  --button-bg-color: #3b82f6; /* Fundo do botão */
+  --button-hover-bg-color: #2563eb; /* Fundo do botão em hover */
+  --button-text-color: #ffffff; /* Texto do botão */
+  --user-bubble-bg: #dbeafe; /* Balão de mensagem do usuário */
+  --user-bubble-text: #1e40af; /* Texto do usuário */
+  --bot-bubble-bg: #e5e7eb; /* Balão de mensagem do bot */
+  --bot-bubble-text: #1f2937; /* Texto do bot */
+  --scrollbar-thumb-color: #d1d5db;
+  --scrollbar-track-color: var(--panel-bg-color);
+  --icon-color: #6b7280;
+  --icon-hover-color: #374151;
+}
+
+body.dark {
+  /* Tema Escuro */
+  --bg-color: #111827;
+  --text-color: #f9fafb;
+  --panel-bg-color: #1f2937;
+  --border-color: #374151;
+  --input-bg-color: #374151;
+  --input-text-color: #f9fafb;
+  --button-bg-color: #3b82f6;
+  --button-hover-bg-color: #60a5fa;
+  --button-text-color: #ffffff;
+  --user-bubble-bg: #1e40af;
+  --user-bubble-text: #dbeafe;
+  --bot-bubble-bg: #374151;
+  --bot-bubble-text: #f3f4f6;
+  --scrollbar-thumb-color: #4b5563;
+  --scrollbar-track-color: var(--panel-bg-color);
+  --icon-color: #9ca3af;
+  --icon-hover-color: #e5e7eb;
+}
+
+/* =================================
+   2. Estilos Globais e Layout
+   ================================= */
 
 body {
-  font-family: 'Inter', sans-serif;
-  background-color: #f3f4f6; /* bg-gray-100 */
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
+
 }
 
 #root {
-  max-width: 1280px;
+
+  flex-direction: column;
+  height: 100vh;
+  max-width: 100%;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 800px; /* Limita a largura máxima do chat */
   margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+/* =================================
+   3. Componentes da UI
+   ================================= */
+
+/* --- Cabeçalho --- */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background-color: var(--panel-bg-color);
+  border-bottom: 1px solid var(--border-color);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.app-header h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+/* --- Botão de Tema --- */
+.theme-toggle-button {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--icon-color);
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
-.card {
-  padding: 2em;
+.theme-toggle-button:hover {
+  background-color: var(--border-color);
+  color: var(--icon-hover-color);
+  transform: scale(1.1) rotate(15deg);
 }
 
-.read-the-docs {
-  color: #888;
+/* --- Janela de Chat --- */
+.chat-window {
+  flex-grow: 1;
+  padding: 1.5rem;
+  overflow-y: auto; 
+  background-color: var(--bg-color);
+  transition: background-color 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Balões de Mensagem --- */
+.message-bubble {
+  max-width: 75%;
+  padding: 0.75rem 1rem;
+  border-radius: 1.25rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: slide-up 0.4s ease forwards;
+}
+
+.message-bubble.user {
+  background-color: var(--user-bubble-bg);
+  color: var(--user-bubble-text);
+  border-bottom-right-radius: 0.25rem;
+  align-self: flex-end;
+}
+
+.message-bubble.bot {
+  background-color: var(--bot-bubble-bg);
+  color: var(--bot-bubble-text);
+  border-bottom-left-radius: 0.25rem;
+  align-self: flex-start;
+  padding: 0; /* Permite que os filhos controlem o padding */
+}
+
+/* --- Estilos para o "Pensamento" da IA --- */
+.thought-container {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px dashed var(--border-color);
+  opacity: 0.9;
+}
+
+.thought-content {
+  font-style: italic;
+  font-size: 0.9rem;
+  color: var(--icon-color);
+  white-space: pre-wrap;
+  line-height: 1.4;
+  display: flex;
+  align-items: flex-start;
+}
+
+.thought-content::before {
+  content: '🧠';
+  margin-right: 0.5rem;
+  font-size: 1.1rem;
+  opacity: 0.8;
+  line-height: 1.4; /* Alinha com o texto */
+}
+
+/* A resposta final, que pode ou não vir depois de um pensamento */
+.final-response {
+  padding: 0.75rem 1rem;
+}
+
+/* Remove margens extras de parágrafos dentro dos balões */
+.final-response > *:first-child {
+  margin-top: 0;
+}
+.final-response > *:last-child {
+  margin-bottom: 0;
 }
 
 /* Animação para o cursor piscando */
@@ -55,6 +204,171 @@ body {
   }
 }
 
-.animate-pulse-caret {
-  animation: pulse-caret 1s step-end infinite;
+.typing-indicator span {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background-color: var(--text-color);
+  animation: pulse-caret 1s infinite;
+  margin-left: 2px;
+}
+
+/* --- Área de Input --- */
+.input-area {
+  display: flex;
+  align-items: flex-end; /* Alinha itens na base para textareas de múltiplas linhas */
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--panel-bg-color);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+  gap: 0.75rem; /* Espaçamento entre os botões e o input */
+}
+
+.input-form {
+  display: flex;
+  width: 100%;
+  align-items: flex-end; /* Mantém alinhamento na base */
+  gap: 0.75rem;
+}
+
+.input-area textarea {
+  flex-grow: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 1.5rem;
+  background-color: var(--input-bg-color);
+  color: var(--input-text-color);
+  font-size: 1rem;
+  resize: none;
+  max-height: 120px;
+  transition: all 0.2s ease;
+  line-height: 1.5;
+}
+
+.input-area textarea:focus {
+  outline: none;
+  border-color: var(--button-bg-color);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+}
+
+/* Estilo base para os botões na área de input */
+.input-area button {
+  background-color: transparent; /* Fundo transparente por padrão */
+  color: var(--icon-color);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.input-area button:hover {
+  background-color: var(--border-color);
+  color: var(--icon-hover-color);
+  transform: scale(1.05);
+}
+
+.input-area button:disabled {
+  color: var(--border-color);
+  background-color: transparent;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Estilo específico para o botão de Enviar */
+.send-button {
+  background-color: var(--button-bg-color);
+  color: var(--button-text-color);
+  border-color: transparent;
+}
+
+.send-button:hover {
+  background-color: var(--button-hover-bg-color);
+  color: var(--button-text-color);
+  transform: scale(1.05);
+}
+
+.send-button:disabled {
+  background-color: #9ca3af; /* gray-400 */
+  color: #e5e7eb;
+  cursor: not-allowed;
+  transform: none;
+  border: none;
+}
+
+/* --- Etiqueta do Arquivo Selecionado --- */
+.file-tag {
+  display: flex;
+  align-items: center;
+  background-color: var(--bot-bubble-bg);
+  color: var(--bot-bubble-text);
+  padding: 0.25rem 0.75rem;
+  border-radius: 1rem;
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem; /* Espaço acima da área de input */
+  align-self: flex-start; /* Alinha à esquerda */
+  margin-left: 1.5rem;
+  opacity: 0;
+  animation: slide-up 0.4s ease forwards;
+}
+
+.file-tag span {
+  max-width: 200px; /* Evita que nomes de arquivo muito longos quebrem o layout */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-tag button {
+  background: none;
+  border: none;
+  color: var(--bot-bubble-text);
+  margin-left: 0.5rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  border-radius: 50%;
+}
+
+.file-tag button:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* =================================
+   4. Animações e Efeitos
+   ================================= */
+
+@keyframes slide-up {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* =================================
+   5. Scrollbar Customizada
+   ================================= */
+
+.chat-window::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-window::-webkit-scrollbar-track {
+  background: var(--scrollbar-track-color);
+}
+
+.chat-window::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb-color);
+  border-radius: 10px;
+  border: 2px solid var(--scrollbar-track-color);
+}
+
+.chat-window::-webkit-scrollbar-thumb:hover {
+  background-color: #a8a29e; /* stone-400 */
 }

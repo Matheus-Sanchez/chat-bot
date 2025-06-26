@@ -13,7 +13,8 @@ function ChatWindow({ messages, isLoading }) {
   }, [messages, isLoading]);
 
   return (
-    <main className="flex-1 p-6 overflow-y-auto space-y-4">
+    // A classe aqui deveria ser "chat-window"
+    <main className="flex-1 p-6 overflow-y-auto space-y-4"> 
       {messages.map((msg, index) => (
         <MessageBubble key={index} role={msg.role} content={msg.content} />
       ))}

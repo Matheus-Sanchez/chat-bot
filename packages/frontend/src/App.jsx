@@ -1,7 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ChatWindow from './components/ChatWindow';
-import FileInput from './components/FileInput';
+import FileInput from './components/FileInput'; // Importa o FileInput
 import { streamChat } from './services/chatApiService';
+import './App.css';
+
+// --- Ícones SVG ---
+const SunIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="5"></circle>
+    <line x1="12" y1="1" x2="12" y2="3"></line>
+    <line x1="12" y1="21" x2="12" y2="23"></line>
+    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+    <line x1="1" y1="12" x2="3" y2="12"></line>
+    <line x1="21" y1="12" x2="23" y2="12"></line>
+    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+  </svg>
+);
+
+const MoonIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+  </svg>
+);
+
+const SendIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="22" y1="2" x2="11" y2="13"></line>
+    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+  </svg>
+);
+
+const CloseIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+    </svg>
+);
+
 
 // --- COMPONENTE PRINCIPAL ---
 
@@ -11,7 +48,23 @@ function App() {
   ]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null); // Estado para o arquivo
+  const [theme, setTheme] = useState('light');
+  const textareaRef = useRef(null);
+
+  // Efeito para ajustar a altura do textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = `${scrollHeight}px`;
+    }
+  }, [userInput]);
+
+  // Efeito para aplicar a classe de tema ao body
+  useEffect(() => {
+    document.body.className = theme;
+  }, [theme]);
 
   const readFileAsText = (file) => {
     return new Promise((resolve, reject) => {
@@ -33,16 +86,18 @@ function App() {
     if (selectedFile) {
       try {
         const fileContent = await readFileAsText(selectedFile);
-        finalPrompt = `Contexto do ficheiro "${selectedFile.name}":
+        finalPrompt = `Use o seguinte contexto do arquivo \"${selectedFile.name}\" para responder à pergunta.
+
+---
 
 ${fileContent}
 
 ---
 
-${trimmedInput}`;
+Pergunta: ${trimmedInput}`;
       } catch (error) {
-        console.error("Erro ao ler o ficheiro:", error);
-        setMessages(prev => [...prev, { role: 'assistant', content: 'Erro ao ler o ficheiro.' }]);
+        console.error("Erro ao ler o arquivo:", error);
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Desculpe, ocorreu um erro ao ler o arquivo.' }]);
         setIsLoading(false);
         return;
       }
@@ -55,63 +110,76 @@ ${trimmedInput}`;
     setSelectedFile(null);
 
     let accumulatedResponse = '';
+    const assistantMessage = { role: 'assistant', content: '' };
+    setMessages(prev => [...prev, assistantMessage]);
+
     streamChat(
       newMessages,
       (chunk) => {
         accumulatedResponse += chunk;
         setMessages(prev => {
-          const lastMsgIndex = prev.length - 1;
-          // Se a última mensagem for do assistente, atualiza. Senão, adiciona uma nova.
-          if (prev[lastMsgIndex]?.role === 'assistant') {
-            const updatedMessages = [...prev];
-            updatedMessages[lastMsgIndex] = { ...updatedMessages[lastMsgIndex], content: accumulatedResponse };
-            return updatedMessages;
-          } else {
-            return [...prev, { role: 'assistant', content: accumulatedResponse }];
-          }
+          const updatedMessages = [...prev];
+          updatedMessages[updatedMessages.length - 1] = { ...assistantMessage, content: accumulatedResponse };
+          return updatedMessages;
         });
       },
-      () => {
-        setIsLoading(false);
-      },
+      () => setIsLoading(false),
       (error) => {
-        setMessages(prev => [...prev, { role: 'assistant', content: 'Ocorreu um erro no servidor.' }]);
+        setMessages(prev => {
+            const updatedMessages = [...prev];
+            updatedMessages[updatedMessages.length - 1] = { ...assistantMessage, content: 'Ocorreu um erro no servidor. Por favor, tente novamente.' };
+            return updatedMessages;
+        });
         setIsLoading(false);
       }
     );
   };
 
+  const toggleTheme = () => {
+    setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
+  };
+
   return (
-    <div className="bg-slate-100 flex items-center justify-center h-screen font-sans">
-      <div className="w-full max-w-3xl h-full md:h-[95vh] flex flex-col bg-white shadow-2xl rounded-xl">
-        <header className="bg-slate-800 text-white p-4 rounded-t-xl flex items-center">
-          <h1 className="text-xl font-bold">Assistente de IA Interno</h1>
-        </header>
-        
-        <ChatWindow messages={messages} isLoading={isLoading} />
-        
-        <footer className="p-4 border-t border-slate-200 bg-white rounded-b-xl">
-          <form onSubmit={handleSendMessage} className="flex flex-col">
-             <div className="flex items-center space-x-4">
-               <FileInput 
-                 selectedFile={selectedFile} 
-                 onFileChange={(e) => setSelectedFile(e.target.files[0])}
-                 onFileRemove={() => setSelectedFile(null)}
-               />
-               <input
-                 type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)}
-                 placeholder="Digite a sua mensagem..." autoComplete="off"
-                 className="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-                 disabled={isLoading} />
-               <button
-                 type="submit" disabled={isLoading || (!userInput.trim() && !selectedFile)}
-                 className="bg-blue-600 text-white font-semibold px-5 py-3 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition disabled:bg-slate-400 disabled:cursor-not-allowed">
-                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-               </button>
-             </div>
-          </form>
-        </footer>
-      </div>
+    <div className="app-container">
+      <header className="app-header">
+        <h1>Assistente IA</h1>
+        <button onClick={toggleTheme} className="theme-toggle-button" title="Mudar tema">
+          {theme === 'light' ? <MoonIcon /> : <SunIcon />}
+        </button>
+      </header>
+      
+      <ChatWindow messages={messages} isLoading={isLoading} />
+      
+      <footer className="input-area">
+        {selectedFile && (
+            <div className="file-tag">
+                <span>{selectedFile.name}</span>
+                <button onClick={() => setSelectedFile(null)} title="Remover arquivo">
+                    <CloseIcon />
+                </button>
+            </div>
+        )}
+        <form onSubmit={handleSendMessage} className="input-form">
+          <FileInput onFileChange={(e) => setSelectedFile(e.target.files[0])} disabled={isLoading} />
+          <textarea
+            ref={textareaRef}
+            value={userInput}
+            onChange={(e) => setUserInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage(e);
+              }
+            }}
+            placeholder="Digite sua mensagem..."
+            rows="1"
+            disabled={isLoading}
+          />
+          <button type="submit" className="send-button" disabled={isLoading || (!userInput.trim() && !selectedFile)} title="Enviar">
+            <SendIcon />
+          </button>
+        </form>
+      </footer>
     </div>
   );
 }
