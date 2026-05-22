@@ -1,92 +1,121 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Moon, Send, Sun, Trash2, X } from 'lucide-react';
 import ChatWindow from './components/ChatWindow';
-import FileInput from './components/FileInput'; // Importa o FileInput
-import { streamChat } from './services/chatApiService';
+import FileInput from './components/FileInput';
+import ModelSelector from './components/ModelSelector';
+import { fetchModels, requestModelLoad, streamChat } from './services/chatApiService';
 import './App.css';
 
-// --- Ícones SVG ---
-const SunIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="5"></circle>
-    <line x1="12" y1="1" x2="12" y2="3"></line>
-    <line x1="12" y1="21" x2="12" y2="23"></line>
-    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-    <line x1="1" y1="12" x2="3" y2="12"></line>
-    <line x1="21" y1="12" x2="23" y2="12"></line>
-    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-  </svg>
-);
+const MAX_FILE_BYTES = 512 * 1024;
 
-const MoonIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-  </svg>
-);
-
-const SendIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="22" y1="2" x2="11" y2="13"></line>
-    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-  </svg>
-);
-
-const CloseIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="18" y1="6" x2="6" y2="18"></line>
-        <line x1="6" y1="6" x2="18" y2="18"></line>
-    </svg>
-);
-
-
-// --- COMPONENTE PRINCIPAL ---
+const welcomeMessage = {
+  role: 'assistant',
+  content: 'Ola! Sou o assistente de IA interno. Como posso ajudar?',
+  localOnly: true,
+};
 
 function App() {
-  const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Olá! Sou o assistente de IA interno. Como posso ajudar?' }
-  ]);
+  const [messages, setMessages] = useState([welcomeMessage]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null); // Estado para o arquivo
+  const [selectedFile, setSelectedFile] = useState(null);
   const [theme, setTheme] = useState('light');
+  const [models, setModels] = useState([]);
+  const [activeModel, setActiveModel] = useState('');
+  const [modelError, setModelError] = useState('');
+  const [modelNotice, setModelNotice] = useState('');
+  const [isModelBusy, setIsModelBusy] = useState(false);
   const textareaRef = useRef(null);
 
-  // Efeito para ajustar a altura do textarea
+  const conversationMessages = useMemo(
+    () => messages.filter((message) => !message.localOnly),
+    [messages]
+  );
+
+  const loadModelCatalog = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setIsModelBusy(true);
+    setModelError('');
+
+    try {
+      const payload = await fetchModels();
+      setModels(payload.models || []);
+      setActiveModel(payload.activeModel || payload.models?.find((model) => model.loaded)?.id || '');
+      setModelNotice(payload.models?.length ? '' : 'Nenhum modelo LLM local encontrado.');
+    } catch (error) {
+      setModelError(error.message);
+    } finally {
+      if (!quiet) setIsModelBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadModelCatalog();
+  }, [loadModelCatalog]);
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      const scrollHeight = textareaRef.current.scrollHeight;
-      textareaRef.current.style.height = `${scrollHeight}px`;
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
   }, [userInput]);
 
-  // Efeito para aplicar a classe de tema ao body
   useEffect(() => {
     document.body.className = theme;
   }, [theme]);
 
-  const readFileAsText = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsText(file);
-    });
+  const readFileAsText = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+
+  const handleSelectModel = async (modelId) => {
+    if (!modelId || modelId === activeModel || isLoading) return;
+
+    setIsModelBusy(true);
+    setModelError('');
+    setModelNotice('Carregando modelo no LM Studio...');
+
+    try {
+      const result = await requestModelLoad(modelId);
+      setActiveModel(result.activeModel || modelId);
+      setModelNotice(result.status === 'already-loaded'
+        ? 'Modelo selecionado.'
+        : `Modelo carregado em ${result.loadTimeSeconds?.toFixed?.(1) || 'alguns'}s.`);
+      await loadModelCatalog({ quiet: true });
+    } catch (error) {
+      setModelError(error.message);
+      setModelNotice('');
+    } finally {
+      setIsModelBusy(false);
+    }
   };
 
   const handleSendMessage = async (event) => {
-    event.preventDefault();
+    event?.preventDefault();
     const trimmedInput = userInput.trim();
     if ((!trimmedInput && !selectedFile) || isLoading) return;
 
     setIsLoading(true);
 
     let finalPrompt = trimmedInput;
+    let displayPrompt = trimmedInput;
     if (selectedFile) {
+      if (selectedFile.size > MAX_FILE_BYTES) {
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: 'O arquivo selecionado e maior que 512 KB. Use um trecho menor para manter o chat responsivo.',
+          localOnly: true,
+        }]);
+        setIsLoading(false);
+        return;
+      }
+
       try {
         const fileContent = await readFileAsText(selectedFile);
-        finalPrompt = `Use o seguinte contexto do arquivo \"${selectedFile.name}\" para responder à pergunta.
+        const question = trimmedInput || 'Resuma o conteudo do arquivo de forma objetiva.';
+        finalPrompt = `Use o seguinte contexto do arquivo "${selectedFile.name}" para responder a pergunta.
 
 ---
 
@@ -94,30 +123,37 @@ ${fileContent}
 
 ---
 
-Pergunta: ${trimmedInput}`;
+Pergunta: ${question}`;
+        displayPrompt = trimmedInput
+          ? `${trimmedInput}\n\nArquivo anexado: ${selectedFile.name}`
+          : `Resuma o arquivo: ${selectedFile.name}`;
       } catch (error) {
-        console.error("Erro ao ler o arquivo:", error);
-        setMessages(prev => [...prev, { role: 'assistant', content: 'Desculpe, ocorreu um erro ao ler o arquivo.' }]);
+        console.error('Erro ao ler o arquivo:', error);
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: 'Desculpe, ocorreu um erro ao ler o arquivo.',
+          localOnly: true,
+        }]);
         setIsLoading(false);
         return;
       }
     }
 
-    const userMessage = { role: 'user', content: finalPrompt };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    const userMessage = { role: 'user', content: displayPrompt, apiContent: finalPrompt };
+    const newMessages = [...conversationMessages, userMessage];
+    setMessages((prev) => [...prev, userMessage]);
     setUserInput('');
     setSelectedFile(null);
 
     let accumulatedResponse = '';
     const assistantMessage = { role: 'assistant', content: '' };
-    setMessages(prev => [...prev, assistantMessage]);
+    setMessages((prev) => [...prev, assistantMessage]);
 
     streamChat(
-      newMessages,
+      newMessages.map(({ role, content, apiContent }) => ({ role, content: apiContent || content })),
       (chunk) => {
         accumulatedResponse += chunk;
-        setMessages(prev => {
+        setMessages((prev) => {
           const updatedMessages = [...prev];
           updatedMessages[updatedMessages.length - 1] = { ...assistantMessage, content: accumulatedResponse };
           return updatedMessages;
@@ -125,58 +161,115 @@ Pergunta: ${trimmedInput}`;
       },
       () => setIsLoading(false),
       (error) => {
-        setMessages(prev => {
-            const updatedMessages = [...prev];
-            updatedMessages[updatedMessages.length - 1] = { ...assistantMessage, content: 'Ocorreu um erro no servidor. Por favor, tente novamente.' };
-            return updatedMessages;
+        console.error('Erro recebido pelo chat:', error);
+        setMessages((prev) => {
+          const updatedMessages = [...prev];
+          updatedMessages[updatedMessages.length - 1] = {
+            ...assistantMessage,
+            content: `Ocorreu um erro no servidor: ${error.message}`,
+            localOnly: true,
+          };
+          return updatedMessages;
         });
         setIsLoading(false);
       }
     );
   };
 
+  const clearConversation = () => {
+    if (isLoading) return;
+    setMessages([welcomeMessage]);
+    setUserInput('');
+    setSelectedFile(null);
+  };
+
   const toggleTheme = () => {
-    setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
+    setTheme((prevTheme) => (prevTheme === 'light' ? 'dark' : 'light'));
   };
 
   return (
-    <div className="app-container">
+    <div className="app-shell">
       <header className="app-header">
-        <h1>Assistente IA</h1>
-        <button onClick={toggleTheme} className="theme-toggle-button" title="Mudar tema">
-          {theme === 'light' ? <MoonIcon /> : <SunIcon />}
-        </button>
+        <div className="brand-block">
+          <h1>Assistente IA</h1>
+          <span>Chat local via LM Studio</span>
+        </div>
+
+        <ModelSelector
+          activeModel={activeModel}
+          disabled={isLoading}
+          error={modelError}
+          isLoading={isModelBusy}
+          models={models}
+          onRefresh={loadModelCatalog}
+          onSelectModel={handleSelectModel}
+        />
+
+        <div className="header-actions">
+          <button
+            className="icon-button"
+            type="button"
+            onClick={clearConversation}
+            disabled={isLoading}
+            title="Nova conversa"
+            aria-label="Nova conversa"
+          >
+            <Trash2 size={18} />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={toggleTheme}
+            title="Mudar tema"
+            aria-label="Mudar tema"
+          >
+            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
+        </div>
       </header>
-      
+
+      {(modelNotice || modelError) && (
+        <div className={`system-banner ${modelError ? 'error' : 'info'}`}>
+          {modelError || modelNotice}
+        </div>
+      )}
+
       <ChatWindow messages={messages} isLoading={isLoading} />
-      
-      <footer className="input-area">
+
+      <footer className="composer">
         {selectedFile && (
-            <div className="file-tag">
-                <span>{selectedFile.name}</span>
-                <button onClick={() => setSelectedFile(null)} title="Remover arquivo">
-                    <CloseIcon />
-                </button>
-            </div>
+          <div className="file-tag">
+            <span>{selectedFile.name}</span>
+            <button type="button" onClick={() => setSelectedFile(null)} title="Remover arquivo">
+              <X size={16} />
+            </button>
+          </div>
         )}
+
         <form onSubmit={handleSendMessage} className="input-form">
-          <FileInput onFileChange={(e) => setSelectedFile(e.target.files[0])} disabled={isLoading} />
+          <FileInput onFileChange={(event) => setSelectedFile(event.target.files[0])} disabled={isLoading} />
           <textarea
             ref={textareaRef}
             value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage(e);
+            onChange={(event) => setUserInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                handleSendMessage(event);
               }
             }}
-            placeholder="Digite sua mensagem..."
+            placeholder="Digite sua mensagem"
             rows="1"
             disabled={isLoading}
           />
-          <button type="submit" className="send-button" disabled={isLoading || (!userInput.trim() && !selectedFile)} title="Enviar">
-            <SendIcon />
+          <button
+            type="submit"
+            className="send-button"
+            disabled={isLoading || (!userInput.trim() && !selectedFile)}
+            title="Enviar"
+            aria-label="Enviar"
+          >
+            <Send size={20} />
           </button>
         </form>
       </footer>

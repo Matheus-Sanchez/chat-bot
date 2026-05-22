@@ -5,7 +5,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node --test test/backend.test.js",
+    "test:lmstudio": "node --test test/*.integration.test.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +21,7 @@
   "homepage": "https://github.com/Matheus-Sanchez/chat-local-bot#readme",
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.19.2"
+    "dotenv": "^16.4.7",
+    "express": "4.22.2"
   }
 }
