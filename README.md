@@ -8,6 +8,15 @@ Interface de chat para modelos carregados no LM Studio, com backend Express faze
 - LM Studio com servidor HTTP ativo
 - Um modelo baixado/carregado no LM Studio
 
+Confirme no mesmo terminal em que voce vai iniciar o projeto:
+
+```bash
+node -v
+npm -v
+```
+
+Se estiver usando Windows + WSL, use um ambiente de cada vez: PowerShell/Windows Terminal com Node no PATH do Windows, ou WSL com Node instalado dentro do WSL.
+
 O endpoint esperado por padrao e:
 
 ```txt
@@ -33,18 +42,35 @@ PORT=4000
 curl http://127.0.0.1:1234/v1/models
 ```
 
+Modelos com raciocinio podem gastar muitos tokens antes da resposta final. Por isso o padrao de `LM_STUDIO_MAX_TOKENS` e `2048`; se uma resposta terminar sem conteudo final, aumente esse valor no `.env`.
+
 ## Rodando
+
+Execute os comandos na raiz do repositorio:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Frontend Vite: `http://localhost:5173`
+No modo desenvolvimento, abra o frontend do Vite:
 
-Backend: `http://localhost:4000`
+- Frontend: `http://localhost:5173`
+- Backend/API: `http://localhost:4000`
 
-Para acessar de outra maquina na rede, abra o endereco de rede exibido pelo Vite ou sirva o build pelo backend:
+Se o `npm run dev` falhar com erro de `concurrently`, rode os dois processos em terminais separados:
+
+```bash
+npm run dev:backend
+```
+
+```bash
+npm run dev:frontend
+```
+
+No modo desenvolvimento, o endereco `http://localhost:4000` e apenas a API/backend. A interface fica em `http://localhost:5173`.
+
+Para acessar de outra maquina na rede, abra o endereco de rede exibido pelo Vite. Se quiser servir a interface pelo proprio backend, gere o build antes:
 
 ```bash
 npm run build
@@ -67,14 +93,17 @@ npm run test:lmstudio
 
 - `GET /health`: status do backend e conectividade com o LM Studio
 - `GET /models`: modelos LLM locais baixados no LM Studio e modelo ativo
-- `POST /models/load`: carrega/seleciona um modelo local no LM Studio
+- `POST /models/load`: valida a selecao de um modelo local sem carrega-lo imediatamente
+- `GET /queue`: estado da fila de mensagens aguardando o LM Studio
 - `POST /chat`: streaming SSE de chat
+
+O backend processa apenas uma mensagem por vez no LM Studio. Requisicoes simultaneas ficam em fila e o stream envia eventos `status` para a interface mostrar quando a mensagem esta aguardando, preparando o modelo, raciocinando ou recebendo a resposta.
 
 ## Troca de modelo pela interface
 
-A interface mostra os modelos LLM locais retornados por `http://127.0.0.1:1234/api/v1/models`. Ao selecionar outro modelo, o backend chama `POST /api/v1/models/load` no LM Studio e passa a usar esse modelo nas proximas respostas.
+A interface mostra os modelos LLM locais retornados por `http://127.0.0.1:1234/api/v1/models`. Ao selecionar outro modelo, a escolha fica salva no navegador do usuario e e enviada junto com a proxima mensagem.
 
-Essa selecao e global para o servidor LM Studio. Se varias pessoas estiverem usando o chat na rede, a troca de modelo feita por uma delas afeta as proximas respostas das outras.
+Quando a mensagem chega na vez dela na fila, o backend descarrega os modelos LLM carregados no LM Studio, carrega o modelo solicitado por aquela mensagem e so entao envia o prompt. Assim, a troca de modelo de um usuario nao interrompe outro processamento em andamento.
 
 ## Windows/NVIDIA e Mac
 

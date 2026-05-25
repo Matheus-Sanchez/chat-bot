@@ -1,61 +1,68 @@
-import DOMPurify from 'dompurify';
-import { Remarkable } from 'remarkable';
+import { Bot, User } from 'lucide-react';
+import { renderMarkdown } from '../lib/markdown';
 
-const md = new Remarkable({
-  html: false,
-  linkTarget: '_blank',
-});
-
-function renderMarkdown(content) {
-  return { __html: DOMPurify.sanitize(md.render(content)) };
-}
-
-function MessageBubble({ role, content }) {
-  const isUser = role === 'user';
-
-  if (!content && !isUser) {
-    return (
-      <div className="message-bubble bot">
-        <div className="typing-indicator"><span></span></div>
-      </div>
-    );
-  }
-
-  if (isUser) {
-    return (
-      <div className="message-bubble user">
-        <div dangerouslySetInnerHTML={renderMarkdown(content)} />
-      </div>
-    );
-  }
-
-  const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
+function splitThoughts(content) {
   const thoughts = [];
-  
-  const finalContent = content.replace(thinkRegex, (_, thoughtContent) => {
-    thoughts.push(thoughtContent.trim());
+  const finalContent = content.replace(/<think>([\s\S]*?)<\/think>/g, (_, thought) => {
+    thoughts.push(thought.trim());
     return '';
   }).trim();
 
-  return (
-    <div className="message-bubble bot">
-      {thoughts.length > 0 && (
-        <div className="thought-container">
-          {thoughts.map((thought, index) => (
-            <div key={index} className="thought-content">
-              {thought}
-            </div>
-          ))}
-        </div>
-      )}
+  return { thoughts, finalContent };
+}
 
-      {finalContent && (
-        <div
-          className="final-response"
-          dangerouslySetInnerHTML={renderMarkdown(finalContent)}
-        />
-      )}
-    </div>
+const DEFAULT_STATUS_TEXT = {
+  queued: 'Na fila...',
+  processing: 'Processando no LM Studio...',
+  reasoning: 'Raciocinando antes de responder...',
+  streaming: 'Recebendo resposta...',
+};
+
+function MessageBubble({ role, content, status, statusText }) {
+  const isUser = role === 'user';
+  const { thoughts, finalContent } = splitThoughts(content || '');
+  const visibleStatus = statusText || DEFAULT_STATUS_TEXT[status] || '';
+
+  return (
+    <article className={`message-row ${isUser ? 'user' : 'assistant'}`}>
+      <div className="message-avatar" aria-hidden="true">
+        {isUser ? <User size={16} /> : <Bot size={17} />}
+      </div>
+
+      <div className="message-body">
+        {!content && !isUser ? (
+          <div className="processing-status" aria-label={visibleStatus || 'Resposta em andamento'}>
+            <span className="typing-caret" />
+            <span>{visibleStatus || 'Preparando resposta...'}</span>
+          </div>
+        ) : (
+          <>
+            {visibleStatus && status !== 'done' && !isUser && (
+              <div className="inline-status">
+                <span className="typing-dot" />
+                <span>{visibleStatus}</span>
+              </div>
+            )}
+
+            {thoughts.length > 0 && (
+              <details className="thoughts">
+                <summary>Raciocinio</summary>
+                {thoughts.map((thought, index) => (
+                  <pre key={`${thought.slice(0, 12)}-${index}`}>{thought}</pre>
+                ))}
+              </details>
+            )}
+
+            {finalContent && (
+              <div
+                className="markdown-content"
+                dangerouslySetInnerHTML={renderMarkdown(finalContent)}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </article>
   );
 }
 

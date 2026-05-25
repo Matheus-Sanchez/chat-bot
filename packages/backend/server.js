@@ -11,11 +11,11 @@ const {
   PORT,
 } = require('./config/ServerConfig');
 const chatRoutes = require('./routes/chat');
+const { chatQueue } = require('./services/chatQueue');
 const {
   getActiveModelIdentifier,
   getLocalModels,
   getModels,
-  loadModel,
   resolveModelIdentifier,
 } = require('./services/lmstudioService');
 
@@ -68,12 +68,32 @@ function createApp() {
     }
   });
 
+  app.get('/queue', (req, res) => {
+    res.status(200).json(chatQueue.getSnapshot());
+  });
+
   app.post('/models/load', async (req, res) => {
     try {
-      const result = await loadModel(req.body?.model);
-      res.status(200).json(result);
+      const modelId = req.body?.model;
+      if (!modelId || typeof modelId !== 'string') {
+        return res.status(400).json({ error: 'Model id is required.' });
+      }
+
+      const localModels = await getLocalModels();
+      const model = localModels.find((candidate) => candidate.id === modelId);
+
+      if (!model) {
+        return res.status(404).json({ error: `Model "${modelId}" was not found among local LM Studio LLM models.` });
+      }
+
+      return res.status(200).json({
+        status: 'selected',
+        model,
+        activeModel: model.id,
+        message: 'Modelo selecionado. Ele sera carregado quando a mensagem chegar na fila.',
+      });
     } catch (error) {
-      res.status(502).json({ error: 'Falha ao carregar modelo no LM Studio.', detail: error.message });
+      res.status(502).json({ error: 'Falha ao validar modelo no LM Studio.', detail: error.message });
     }
   });
 

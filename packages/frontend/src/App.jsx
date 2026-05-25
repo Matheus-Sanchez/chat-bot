@@ -1,35 +1,124 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Send, Sun, Trash2, X } from 'lucide-react';
+import { Moon, RefreshCcw, Square, Sun, Trash2 } from 'lucide-react';
+import ChatComposer from './components/ChatComposer';
+import ChatHeader from './components/ChatHeader';
 import ChatWindow from './components/ChatWindow';
-import FileInput from './components/FileInput';
+import ConversationList from './components/ConversationList';
 import ModelSelector from './components/ModelSelector';
-import { fetchModels, requestModelLoad, streamChat } from './services/chatApiService';
+import {
+  createConversation,
+  deleteConversation,
+  getConversationIndex,
+  loadConversation,
+  loadOrCreateActiveConversation,
+  saveConversation,
+  setActiveConversationId as storeActiveConversationId,
+} from './lib/conversationStorage';
+import { fetchModels, streamChat } from './services/chatApiService';
 import './App.css';
 
 const MAX_FILE_BYTES = 512 * 1024;
+const SELECTED_MODEL_STORAGE_KEY = 'chat.selectedModelId';
 
 const welcomeMessage = {
+  id: 'welcome',
   role: 'assistant',
-  content: 'Ola! Sou o assistente de IA interno. Como posso ajudar?',
+  content: 'Ola! Sou o assistente local. Como posso ajudar?',
   localOnly: true,
 };
 
+function getInitialConversationState() {
+  return loadOrCreateActiveConversation({
+    defaultModelId: window.localStorage.getItem(SELECTED_MODEL_STORAGE_KEY) || '',
+    defaultMessages: [welcomeMessage],
+  });
+}
+
+function hydrateMessages(messages) {
+  return Array.isArray(messages) && messages.length > 0 ? messages : [welcomeMessage];
+}
+
+function createMessageId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+}
+
+function getInitialTheme() {
+  const storedTheme = window.localStorage.getItem('chat-theme');
+  if (storedTheme === 'dark' || storedTheme === 'light') return storedTheme;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 function App() {
-  const [messages, setMessages] = useState([welcomeMessage]);
-  const [userInput, setUserInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [initialState] = useState(getInitialConversationState);
+  const [activeConversationId, setActiveConversationId] = useState(initialState.conversation.id);
+  const [conversationIndex, setConversationIndex] = useState(initialState.index);
+  const [messages, setMessages] = useState(() => hydrateMessages(initialState.conversation.messages));
+  const [draft, setDraft] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
-  const [theme, setTheme] = useState('light');
+  const [isStreaming, setIsStreaming] = useState(false);
   const [models, setModels] = useState([]);
-  const [activeModel, setActiveModel] = useState('');
+  const [activeModel, setActiveModel] = useState(initialState.conversation.modelId || '');
   const [modelError, setModelError] = useState('');
   const [modelNotice, setModelNotice] = useState('');
   const [isModelBusy, setIsModelBusy] = useState(false);
-  const textareaRef = useRef(null);
+  const [theme, setTheme] = useState(getInitialTheme);
+  const abortRef = useRef(null);
+  const activeConversationIdRef = useRef(initialState.conversation.id);
+  const activeConversationCreatedAtRef = useRef(initialState.conversation.createdAt);
+  const activeModelRef = useRef(initialState.conversation.modelId || '');
+
+  useEffect(() => {
+    activeModelRef.current = activeModel;
+  }, [activeModel]);
+
+  const persistActiveConversation = useCallback((nextMessages, modelId = activeModelRef.current) => {
+    if (!activeConversationIdRef.current) return;
+
+    const { conversation, index } = saveConversation({
+      id: activeConversationIdRef.current,
+      createdAt: activeConversationCreatedAtRef.current,
+      modelId: modelId || '',
+      messages: nextMessages,
+    });
+
+    activeConversationCreatedAtRef.current = conversation.createdAt;
+    setConversationIndex(index);
+  }, []);
+
+  const applyConversation = useCallback((conversation, nextIndex = getConversationIndex()) => {
+    activeConversationIdRef.current = conversation.id;
+    activeConversationCreatedAtRef.current = conversation.createdAt;
+    storeActiveConversationId(conversation.id);
+    setActiveConversationId(conversation.id);
+    setConversationIndex(nextIndex);
+    setMessages(hydrateMessages(conversation.messages));
+    setDraft('');
+    setSelectedFile(null);
+
+    if (conversation.modelId) {
+      activeModelRef.current = conversation.modelId;
+      setActiveModel(conversation.modelId);
+      window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, conversation.modelId);
+    }
+  }, []);
 
   const conversationMessages = useMemo(
     () => messages.filter((message) => !message.localOnly),
     [messages]
+  );
+
+  const selectedModel = useMemo(
+    () => models.find((model) => model.id === activeModel),
+    [activeModel, models]
   );
 
   const loadModelCatalog = useCallback(async ({ quiet = false } = {}) => {
@@ -38,11 +127,24 @@ function App() {
 
     try {
       const payload = await fetchModels();
-      setModels(payload.models || []);
-      setActiveModel(payload.activeModel || payload.models?.find((model) => model.loaded)?.id || '');
-      setModelNotice(payload.models?.length ? '' : 'Nenhum modelo LLM local encontrado.');
+      const nextModels = payload.models || [];
+      const preferredModelId = activeModelRef.current
+        || window.localStorage.getItem(SELECTED_MODEL_STORAGE_KEY);
+      const preferredModelExists = nextModels.some((model) => model.id === preferredModelId);
+      const nextActiveModel = preferredModelExists
+        ? preferredModelId
+        : payload.activeModel || nextModels.find((model) => model.loaded)?.id || nextModels[0]?.id || '';
+
+      setModels(nextModels);
+      setActiveModel(nextActiveModel);
+      if (nextActiveModel) {
+        activeModelRef.current = nextActiveModel;
+        window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, nextActiveModel);
+      }
+      setModelNotice(nextModels.length ? '' : 'Nenhum modelo LLM local encontrado.');
     } catch (error) {
       setModelError(error.message);
+      setModelNotice('');
     } finally {
       if (!quiet) setIsModelBusy(false);
     }
@@ -53,69 +155,89 @@ function App() {
   }, [loadModelCatalog]);
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, [userInput]);
-
-  useEffect(() => {
-    document.body.className = theme;
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem('chat-theme', theme);
   }, [theme]);
 
-  const readFileAsText = (file) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsText(file);
-  });
+  const handleCreateConversation = () => {
+    if (isStreaming) return;
 
-  const handleSelectModel = async (modelId) => {
-    if (!modelId || modelId === activeModel || isLoading) return;
+    const { conversation, index } = createConversation({
+      modelId: activeModelRef.current,
+      messages: [welcomeMessage],
+    });
 
-    setIsModelBusy(true);
-    setModelError('');
-    setModelNotice('Carregando modelo no LM Studio...');
+    applyConversation(conversation, index);
+  };
 
-    try {
-      const result = await requestModelLoad(modelId);
-      setActiveModel(result.activeModel || modelId);
-      setModelNotice(result.status === 'already-loaded'
-        ? 'Modelo selecionado.'
-        : `Modelo carregado em ${result.loadTimeSeconds?.toFixed?.(1) || 'alguns'}s.`);
-      await loadModelCatalog({ quiet: true });
-    } catch (error) {
-      setModelError(error.message);
-      setModelNotice('');
-    } finally {
-      setIsModelBusy(false);
+  const handleOpenConversation = (conversationId) => {
+    if (isStreaming || conversationId === activeConversationIdRef.current) return;
+
+    const conversation = loadConversation(conversationId);
+    if (!conversation) {
+      setConversationIndex(getConversationIndex());
+      return;
+    }
+
+    applyConversation(conversation);
+  };
+
+  const handleDeleteActiveConversation = () => {
+    if (isStreaming) return;
+
+    const nextIndex = deleteConversation(activeConversationIdRef.current);
+    if (!nextIndex.length) {
+      const { conversation, index } = createConversation({
+        modelId: activeModelRef.current,
+        messages: [welcomeMessage],
+      });
+      applyConversation(conversation, index);
+      return;
+    }
+
+    const nextConversation = loadConversation(nextIndex[0].id);
+    if (nextConversation) {
+      applyConversation(nextConversation, nextIndex);
     }
   };
 
-  const handleSendMessage = async (event) => {
-    event?.preventDefault();
-    const trimmedInput = userInput.trim();
-    if ((!trimmedInput && !selectedFile) || isLoading) return;
+  const handleSelectModel = async (modelId) => {
+    if (!modelId || modelId === activeModel || isStreaming) return;
 
-    setIsLoading(true);
+    setModelError('');
+    setActiveModel(modelId);
+    activeModelRef.current = modelId;
+    window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, modelId);
+    persistActiveConversation(messages, modelId);
+    setModelNotice('Modelo selecionado para as proximas mensagens. Ele sera carregado quando sua mensagem chegar na fila.');
+  };
 
-    let finalPrompt = trimmedInput;
-    let displayPrompt = trimmedInput;
-    if (selectedFile) {
-      if (selectedFile.size > MAX_FILE_BYTES) {
-        setMessages((prev) => [...prev, {
-          role: 'assistant',
-          content: 'O arquivo selecionado e maior que 512 KB. Use um trecho menor para manter o chat responsivo.',
-          localOnly: true,
-        }]);
-        setIsLoading(false);
-        return;
-      }
+  const stopStreaming = () => {
+    abortRef.current?.abort();
+  };
 
-      try {
-        const fileContent = await readFileAsText(selectedFile);
-        const question = trimmedInput || 'Resuma o conteudo do arquivo de forma objetiva.';
-        finalPrompt = `Use o seguinte contexto do arquivo "${selectedFile.name}" para responder a pergunta.
+  const buildPrompt = async () => {
+    const trimmedDraft = draft.trim();
+
+    if (!selectedFile) {
+      return {
+        displayPrompt: trimmedDraft,
+        apiPrompt: trimmedDraft,
+      };
+    }
+
+    if (selectedFile.size > MAX_FILE_BYTES) {
+      throw new Error('O arquivo selecionado e maior que 512 KB.');
+    }
+
+    const fileContent = await readFileAsText(selectedFile);
+    const question = trimmedDraft || 'Resuma o conteudo do arquivo de forma objetiva.';
+
+    return {
+      displayPrompt: trimmedDraft
+        ? `${trimmedDraft}\n\nArquivo anexado: ${selectedFile.name}`
+        : `Resuma o arquivo: ${selectedFile.name}`,
+      apiPrompt: `Use o seguinte contexto do arquivo "${selectedFile.name}" para responder a pergunta.
 
 ---
 
@@ -123,98 +245,172 @@ ${fileContent}
 
 ---
 
-Pergunta: ${question}`;
-        displayPrompt = trimmedInput
-          ? `${trimmedInput}\n\nArquivo anexado: ${selectedFile.name}`
-          : `Resuma o arquivo: ${selectedFile.name}`;
-      } catch (error) {
-        console.error('Erro ao ler o arquivo:', error);
-        setMessages((prev) => [...prev, {
-          role: 'assistant',
-          content: 'Desculpe, ocorreu um erro ao ler o arquivo.',
-          localOnly: true,
-        }]);
-        setIsLoading(false);
-        return;
-      }
-    }
-
-    const userMessage = { role: 'user', content: displayPrompt, apiContent: finalPrompt };
-    const newMessages = [...conversationMessages, userMessage];
-    setMessages((prev) => [...prev, userMessage]);
-    setUserInput('');
-    setSelectedFile(null);
-
-    let accumulatedResponse = '';
-    const assistantMessage = { role: 'assistant', content: '' };
-    setMessages((prev) => [...prev, assistantMessage]);
-
-    streamChat(
-      newMessages.map(({ role, content, apiContent }) => ({ role, content: apiContent || content })),
-      (chunk) => {
-        accumulatedResponse += chunk;
-        setMessages((prev) => {
-          const updatedMessages = [...prev];
-          updatedMessages[updatedMessages.length - 1] = { ...assistantMessage, content: accumulatedResponse };
-          return updatedMessages;
-        });
-      },
-      () => setIsLoading(false),
-      (error) => {
-        console.error('Erro recebido pelo chat:', error);
-        setMessages((prev) => {
-          const updatedMessages = [...prev];
-          updatedMessages[updatedMessages.length - 1] = {
-            ...assistantMessage,
-            content: `Ocorreu um erro no servidor: ${error.message}`,
-            localOnly: true,
-          };
-          return updatedMessages;
-        });
-        setIsLoading(false);
-      }
-    );
+Pergunta: ${question}`,
+    };
   };
 
-  const clearConversation = () => {
-    if (isLoading) return;
-    setMessages([welcomeMessage]);
-    setUserInput('');
-    setSelectedFile(null);
+  const handleSubmit = async (event) => {
+    event?.preventDefault();
+    if (isStreaming || (!draft.trim() && !selectedFile)) return;
+
+    const userId = createMessageId('user');
+    const assistantId = createMessageId('assistant');
+    const messagesBeforeSubmit = messages;
+    const modelForRequest = activeModel || '';
+    let accumulatedResponse = '';
+    let accumulatedReasoning = '';
+    let userMessage = null;
+    let assistantMessage = null;
+
+    try {
+      const { displayPrompt, apiPrompt } = await buildPrompt();
+      userMessage = {
+        id: userId,
+        role: 'user',
+        content: displayPrompt,
+        apiContent: apiPrompt,
+      };
+      assistantMessage = {
+        id: assistantId,
+        role: 'assistant',
+        content: '',
+        status: 'queued',
+        statusText: 'Entrando na fila...',
+      };
+      const requestMessages = [...conversationMessages, userMessage]
+        .map(({ role, content, apiContent }) => ({ role, content: apiContent || content }));
+      const optimisticMessages = [...messagesBeforeSubmit, userMessage, assistantMessage];
+      const persistedUserMessages = [...messagesBeforeSubmit, userMessage];
+
+      setMessages(optimisticMessages);
+      persistActiveConversation(persistedUserMessages, modelForRequest);
+      setDraft('');
+      setSelectedFile(null);
+      setIsStreaming(true);
+
+      const abortController = new AbortController();
+      abortRef.current = abortController;
+
+      await streamChat(requestMessages, {
+        model: modelForRequest || undefined,
+        signal: abortController.signal,
+        onStatus: (status) => {
+          setMessages((current) => current.map((message) => {
+            if (message.id !== assistantId) return message;
+
+            return {
+              ...message,
+              status: status.state || message.status,
+              statusText: status.message || message.statusText,
+              queuePosition: status.position ?? message.queuePosition,
+            };
+          }));
+        },
+        onReasoning: (chunk) => {
+          accumulatedReasoning += chunk;
+        },
+        onChunk: (chunk) => {
+          accumulatedResponse += chunk;
+          setMessages((current) => current.map((message) => (
+            message.id === assistantId
+              ? { ...message, content: accumulatedResponse, status: 'streaming', statusText: 'Recebendo resposta...' }
+              : message
+          )));
+        },
+      });
+
+      const fallbackContent = accumulatedReasoning.trim()
+        ? 'O modelo terminou sem uma resposta final. Ele enviou apenas raciocinio interno; aumentei o limite padrao de tokens para reduzir isso. Tente reenviar a pergunta.'
+        : 'A resposta terminou sem conteudo.';
+      const finalAssistantMessage = {
+        ...assistantMessage,
+        content: accumulatedResponse.trim() ? accumulatedResponse : fallbackContent,
+        localOnly: !accumulatedResponse.trim(),
+        status: 'done',
+        statusText: '',
+      };
+      const finalMessages = [...messagesBeforeSubmit, userMessage, finalAssistantMessage];
+
+      setMessages(finalMessages);
+      persistActiveConversation(finalMessages, modelForRequest);
+    } catch (error) {
+      const wasAborted = error.name === 'AbortError';
+      const errorAssistantMessage = {
+        id: assistantId,
+        role: 'assistant',
+        content: wasAborted && accumulatedResponse.trim()
+          ? accumulatedResponse
+          : wasAborted
+            ? 'Resposta interrompida.'
+            : `Ocorreu um erro: ${error.message}`,
+        localOnly: true,
+        status: wasAborted ? 'done' : 'error',
+        statusText: wasAborted && accumulatedResponse.trim() ? 'Interrompida.' : '',
+      };
+      const failedMessages = userMessage
+        ? [...messagesBeforeSubmit, userMessage, errorAssistantMessage]
+        : [...messagesBeforeSubmit, { ...errorAssistantMessage, id: createMessageId('local-error') }];
+
+      setMessages(failedMessages);
+      persistActiveConversation(failedMessages, modelForRequest);
+    } finally {
+      abortRef.current = null;
+      setIsStreaming(false);
+    }
   };
 
   const toggleTheme = () => {
-    setTheme((prevTheme) => (prevTheme === 'light' ? 'dark' : 'light'));
+    setTheme((currentTheme) => (currentTheme === 'light' ? 'dark' : 'light'));
   };
+
+  const statusText = modelError
+    ? 'LM Studio indisponivel'
+    : selectedModel?.name || activeModel || 'Modelo automatico';
 
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div className="brand-block">
-          <h1>Assistente IA</h1>
-          <span>Chat local via LM Studio</span>
-        </div>
+      <aside className="workspace-panel">
+        <ChatHeader statusText={statusText} hasError={Boolean(modelError)} />
 
         <ModelSelector
           activeModel={activeModel}
-          disabled={isLoading}
+          disabled={isStreaming}
           error={modelError}
           isLoading={isModelBusy}
           models={models}
+          notice={modelNotice}
           onRefresh={loadModelCatalog}
           onSelectModel={handleSelectModel}
         />
 
-        <div className="header-actions">
+        <ConversationList
+          activeConversationId={activeConversationId}
+          conversations={conversationIndex}
+          disabled={isStreaming}
+          onCreateConversation={handleCreateConversation}
+          onSelectConversation={handleOpenConversation}
+        />
+
+        <div className="workspace-actions" aria-label="Acoes da conversa">
           <button
             className="icon-button"
             type="button"
-            onClick={clearConversation}
-            disabled={isLoading}
-            title="Nova conversa"
-            aria-label="Nova conversa"
+            onClick={handleDeleteActiveConversation}
+            disabled={isStreaming}
+            title="Apagar conversa"
+            aria-label="Apagar conversa"
           >
             <Trash2 size={18} />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => loadModelCatalog()}
+            disabled={isModelBusy}
+            title="Atualizar modelos"
+            aria-label="Atualizar modelos"
+          >
+            <RefreshCcw size={18} className={isModelBusy ? 'spin' : undefined} />
           </button>
           <button
             className="icon-button"
@@ -226,53 +422,47 @@ Pergunta: ${question}`;
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
         </div>
-      </header>
+      </aside>
 
-      {(modelNotice || modelError) && (
-        <div className={`system-banner ${modelError ? 'error' : 'info'}`}>
-          {modelError || modelNotice}
-        </div>
-      )}
-
-      <ChatWindow messages={messages} isLoading={isLoading} />
-
-      <footer className="composer">
-        {selectedFile && (
-          <div className="file-tag">
-            <span>{selectedFile.name}</span>
-            <button type="button" onClick={() => setSelectedFile(null)} title="Remover arquivo">
-              <X size={16} />
+      <section className="chat-panel" aria-label="Chat local">
+        <header className="chat-topbar">
+          <div>
+            <span className={`connection-dot ${modelError ? 'error' : ''}`} />
+            <span>{statusText}</span>
+          </div>
+          {isStreaming && (
+            <button
+              className="topbar-stop"
+              type="button"
+              onClick={stopStreaming}
+              title="Interromper resposta"
+              aria-label="Interromper resposta"
+            >
+              <Square size={15} />
             </button>
+          )}
+        </header>
+
+        {(modelNotice || modelError) && (
+          <div className={`system-banner ${modelError ? 'error' : 'info'}`}>
+            {modelError || modelNotice}
           </div>
         )}
 
-        <form onSubmit={handleSendMessage} className="input-form">
-          <FileInput onFileChange={(event) => setSelectedFile(event.target.files[0])} disabled={isLoading} />
-          <textarea
-            ref={textareaRef}
-            value={userInput}
-            onChange={(event) => setUserInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                handleSendMessage(event);
-              }
-            }}
-            placeholder="Digite sua mensagem"
-            rows="1"
-            disabled={isLoading}
-          />
-          <button
-            type="submit"
-            className="send-button"
-            disabled={isLoading || (!userInput.trim() && !selectedFile)}
-            title="Enviar"
-            aria-label="Enviar"
-          >
-            <Send size={20} />
-          </button>
-        </form>
-      </footer>
+        <ChatWindow messages={messages} isStreaming={isStreaming} />
+
+        <ChatComposer
+          disabled={isStreaming}
+          draft={draft}
+          isStreaming={isStreaming}
+          onChangeDraft={setDraft}
+          onClearFile={() => setSelectedFile(null)}
+          onFileSelect={setSelectedFile}
+          onStop={stopStreaming}
+          onSubmit={handleSubmit}
+          selectedFile={selectedFile}
+        />
+      </section>
     </div>
   );
 }

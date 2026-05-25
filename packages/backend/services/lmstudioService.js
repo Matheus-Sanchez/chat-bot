@@ -7,6 +7,7 @@ const {
     LM_STUDIO_MODELS_URL,
     LM_STUDIO_TEMPERATURE,
     LM_STUDIO_TIMEOUT_MS,
+    LM_STUDIO_UNLOAD_MODEL_URL,
 } = require('../config/ServerConfig');
 
 let cachedAutoModel = null;
@@ -209,10 +210,80 @@ async function loadModel(modelId, options = {}) {
     }
 }
 
+function getLoadedInstanceIds(model) {
+    if (!Array.isArray(model.loadedInstances)) return [];
+
+    return model.loadedInstances
+        .map((instance) => instance.instance_id || instance.instanceId || instance.id)
+        .filter(Boolean);
+}
+
+async function unloadModelInstance(instanceId, options = {}) {
+    ensureFetchAvailable();
+
+    if (!instanceId || typeof instanceId !== 'string') {
+        throw new Error('Model instance id is required.');
+    }
+
+    const request = withTimeout(options.signal, Math.max(LM_STUDIO_TIMEOUT_MS, 120000));
+    try {
+        const response = await fetch(LM_STUDIO_UNLOAD_MODEL_URL, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ instance_id: instanceId }),
+            signal: request.signal,
+        });
+
+        if (!response.ok) {
+            throw new Error(`LM Studio unload model request failed with status ${response.status}: ${await readErrorBody(response)}`);
+        }
+
+        return response.json().catch(() => ({ instance_id: instanceId }));
+    } finally {
+        request.clear();
+    }
+}
+
+async function unloadLoadedLlmModels(options = {}) {
+    const localModels = await getLocalModels(options);
+    const loadedInstanceIds = localModels.flatMap(getLoadedInstanceIds);
+
+    for (const instanceId of loadedInstanceIds) {
+        await unloadModelInstance(instanceId, options);
+    }
+
+    activeModelIdentifier = null;
+    cachedAutoModel = null;
+
+    return loadedInstanceIds;
+}
+
+async function prepareModelForChat(modelId, options = {}) {
+    const requestedModelId = modelId || await resolveModelIdentifier(options);
+    const localModels = await getLocalModels(options);
+    const model = localModels.find((candidate) => candidate.id === requestedModelId);
+
+    if (!model) {
+        throw new Error(`Model "${requestedModelId}" was not found among local LM Studio LLM models.`);
+    }
+
+    const unloadedInstances = await unloadLoadedLlmModels(options);
+    const loadResult = await loadModel(requestedModelId, options);
+
+    return {
+        ...loadResult,
+        unloadedInstances,
+        activeModel: loadResult.activeModel || requestedModelId,
+    };
+}
+
 async function streamChatCompletion(messages, options = {}) {
     ensureFetchAvailable();
 
-    const model = await resolveModelIdentifier(options);
+    const { activeModel: model } = await prepareModelForChat(options.model, options);
     const request = withTimeout(options.signal, LM_STUDIO_TIMEOUT_MS);
 
     const response = await fetch(LM_STUDIO_CHAT_URL, {
@@ -248,7 +319,10 @@ module.exports = {
     getLocalModels,
     getModels,
     loadModel,
+    prepareModelForChat,
     resolveModelIdentifier,
     setActiveModelIdentifier,
     streamChatCompletion,
+    unloadLoadedLlmModels,
+    unloadModelInstance,
 };

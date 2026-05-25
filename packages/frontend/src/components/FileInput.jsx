@@ -1,34 +1,53 @@
 import { useRef } from 'react';
 import { Paperclip } from 'lucide-react';
 
-function FileInput({ onFileChange, disabled }) {
+const ACCEPTED_TEXT_FILES = [
+  '.txt',
+  '.md',
+  '.json',
+  '.csv',
+  '.log',
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.py',
+  '.java',
+  '.cs',
+  '.html',
+  '.css',
+  '.xml',
+  '.yaml',
+  '.yml',
+].join(',');
+
+function FileInput({ disabled, onFileSelect }) {
   const fileInputRef = useRef(null);
 
-  const handleButtonClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''; // Permite selecionar o mesmo arquivo novamente
-    }
+  const openFilePicker = () => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
     fileInputRef.current?.click();
   };
 
   return (
     <>
       <input
-        type="file"
         ref={fileInputRef}
-        onChange={onFileChange}
-        accept=".txt,.md,.json,.csv,.log,.js,.jsx,.ts,.tsx,.py,.java,.cs,.html,.css,.xml,.yaml,.yml"
-        style={{ display: 'none' }}
+        type="file"
+        accept={ACCEPTED_TEXT_FILES}
         disabled={disabled}
+        onChange={(event) => onFileSelect(event.target.files?.[0] || null)}
+        hidden
       />
-      <button 
-        onClick={handleButtonClick} 
-        className="file-attach-button" 
-        type="button" 
-        disabled={disabled} 
+      <button
+        className="composer-tool"
+        type="button"
+        onClick={openFilePicker}
+        disabled={disabled}
         title="Anexar arquivo"
+        aria-label="Anexar arquivo"
       >
-        <Paperclip size={20} />
+        <Paperclip size={19} />
       </button>
     </>
   );

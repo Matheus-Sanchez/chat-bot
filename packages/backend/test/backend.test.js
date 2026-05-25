@@ -24,8 +24,16 @@ function closeServer(server) {
 
 async function startFakeLmStudio() {
     let activeModel = 'fake-gemma-model';
+    const stats = {
+        inFlight: 0,
+        maxInFlight: 0,
+        startedPrompts: [],
+        startedModels: [],
+        unloads: 0,
+        loads: 0,
+    };
 
-    return startServer((req, res) => {
+    const serverInfo = await startServer((req, res) => {
         if (req.method === 'GET' && req.url === '/v1/models') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ data: [{ id: activeModel, object: 'model' }] }));
@@ -72,8 +80,9 @@ async function startFakeLmStudio() {
             });
             req.on('end', () => {
                 const payload = JSON.parse(body);
-                assert.equal(payload.model, 'fake-alt-model');
+                assert.match(payload.model, /^fake-(gemma|alt)-model$/);
                 activeModel = payload.model;
+                stats.loads += 1;
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
@@ -82,6 +91,23 @@ async function startFakeLmStudio() {
                     load_time_seconds: 0.01,
                     status: 'loaded',
                 }));
+            });
+            return;
+        }
+
+        if (req.method === 'POST' && req.url === '/api/v1/models/unload') {
+            let body = '';
+            req.on('data', (chunk) => {
+                body += chunk;
+            });
+            req.on('end', () => {
+                const payload = JSON.parse(body);
+                assert.equal(payload.instance_id, activeModel);
+                activeModel = null;
+                stats.unloads += 1;
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ status: 'unloaded' }));
             });
             return;
         }
@@ -95,13 +121,32 @@ async function startFakeLmStudio() {
                 const payload = JSON.parse(body);
                 assert.equal(payload.model, activeModel);
                 assert.equal(payload.stream, true);
+                const prompt = payload.messages.at(-1)?.content || '';
+                const delayMs = prompt.includes('primeira concorrente') ? 150 : 0;
+                let counted = true;
+
+                stats.inFlight += 1;
+                stats.maxInFlight = Math.max(stats.maxInFlight, stats.inFlight);
+                stats.startedPrompts.push(prompt);
+                stats.startedModels.push(payload.model);
+
+                const finishCount = () => {
+                    if (!counted) return;
+                    counted = false;
+                    stats.inFlight -= 1;
+                };
+
+                res.on('finish', finishCount);
+                res.on('close', finishCount);
 
                 res.writeHead(200, {
                     'Content-Type': 'text/event-stream',
                     'Cache-Control': 'no-cache',
                 });
                 res.write('data: {"choices":[{"delta":{"content":"OK"}}]}\n\n');
-                res.end('data: [DONE]\n\n');
+                setTimeout(() => {
+                    res.end('data: [DONE]\n\n');
+                }, delayMs);
             });
             return;
         }
@@ -109,6 +154,8 @@ async function startFakeLmStudio() {
         res.writeHead(404);
         res.end();
     });
+
+    return { ...serverInfo, stats };
 }
 
 test('backend validates requests and proxies LM Studio streams', { timeout: 10000 }, async () => {
@@ -159,15 +206,60 @@ test('backend validates requests and proxies LM Studio streams', { timeout: 1000
         });
         assert.equal(loadResponse.status, 200);
         const loadResult = await loadResponse.json();
+        assert.equal(loadResult.status, 'selected');
         assert.equal(loadResult.activeModel, 'fake-alt-model');
 
         const secondChatResponse = await fetch(`${backend.url}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages: [{ role: 'user', content: 'Diga OK de novo' }] }),
+            body: JSON.stringify({
+                model: 'fake-alt-model',
+                messages: [{ role: 'user', content: 'Diga OK de novo' }],
+            }),
         });
         assert.equal(secondChatResponse.status, 200);
         assert.match(await secondChatResponse.text(), /"OK"/);
+        assert.equal(fakeLmStudio.stats.startedModels.at(-1), 'fake-alt-model');
+
+        const firstQueuedChat = fetch(`${backend.url}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'fake-gemma-model',
+                messages: [{ role: 'user', content: 'primeira concorrente' }],
+            }),
+        }).then(async (response) => {
+            assert.equal(response.status, 200);
+            return response.text();
+        });
+
+        const secondQueuedChat = fetch(`${backend.url}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'fake-alt-model',
+                messages: [{ role: 'user', content: 'segunda concorrente' }],
+            }),
+        }).then(async (response) => {
+            assert.equal(response.status, 200);
+            return response.text();
+        });
+
+        const [firstQueuedText, secondQueuedText] = await Promise.all([firstQueuedChat, secondQueuedChat]);
+        assert.match(firstQueuedText, /"OK"/);
+        assert.match(secondQueuedText, /"OK"/);
+        assert.match(secondQueuedText, /"queued"/);
+        assert.equal(fakeLmStudio.stats.maxInFlight, 1);
+        assert.deepEqual(fakeLmStudio.stats.startedPrompts.slice(-2), [
+            'primeira concorrente',
+            'segunda concorrente',
+        ]);
+        assert.deepEqual(fakeLmStudio.stats.startedModels.slice(-2), [
+            'fake-gemma-model',
+            'fake-alt-model',
+        ]);
+        assert.ok(fakeLmStudio.stats.unloads >= 2);
+        assert.ok(fakeLmStudio.stats.loads >= 2);
     } finally {
         await closeServer(backend.server);
         await closeServer(fakeLmStudio.server);

@@ -10,57 +10,53 @@ function ModelSelector({
   error,
   isLoading,
   models,
+  notice,
   onRefresh,
   onSelectModel,
 }) {
   const selectedModel = models.find((model) => model.id === activeModel);
+  const detailText = error
+    || notice
+    || (selectedModel ? formatModelMeta(selectedModel) || selectedModel.id : 'Pronto para conversar');
 
   return (
-    <section className="model-panel" aria-label="Modelo do LM Studio">
-      <div className="model-status">
-        <span className={`status-dot ${error ? 'error' : 'ready'}`} />
-        <div>
-          <span className="status-label">{error ? 'LM Studio indisponivel' : 'LM Studio conectado'}</span>
-          <strong title={selectedModel?.name || activeModel || 'Modelo automatico'}>
-            {selectedModel?.name || activeModel || 'Modelo automatico'}
-          </strong>
-        </div>
+    <section className="model-section" aria-label="Modelo do LM Studio">
+      <div className="section-title">
+        <Cpu size={17} />
+        <span>Modelo</span>
       </div>
 
-      <div className="model-controls">
-        <label className="model-select-wrap" title="Modelo carregado para as proximas respostas">
-          <Cpu size={16} aria-hidden="true" />
-          <select
-            value={activeModel || ''}
-            onChange={(event) => onSelectModel(event.target.value)}
-            disabled={disabled || isLoading || models.length === 0}
-          >
-            <option value="" disabled>
-              Selecionar modelo
+      <label className="model-select-wrap">
+        <select
+          value={activeModel || ''}
+          onChange={(event) => onSelectModel(event.target.value)}
+          disabled={disabled || isLoading || models.length === 0}
+          aria-label="Selecionar modelo"
+        >
+          <option value="" disabled>
+            Selecionar modelo
+          </option>
+          {models.map((model) => (
+            <option key={model.id} value={model.id}>
+              {model.name} {formatModelMeta(model) ? `(${formatModelMeta(model)})` : ''}{model.loaded ? ' - carregado' : ''}
             </option>
-            {models.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.name} {formatModelMeta(model) ? `(${formatModelMeta(model)})` : ''}{model.loaded ? ' - carregado' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-
+          ))}
+        </select>
         <button
-          className="icon-button"
+          className="model-refresh"
           type="button"
           onClick={onRefresh}
           disabled={disabled || isLoading}
           title="Atualizar modelos"
           aria-label="Atualizar modelos"
         >
-          {isLoading ? <Loader2 size={18} className="spin" /> : <RefreshCcw size={18} />}
+          {isLoading ? <Loader2 size={17} className="spin" /> : <RefreshCcw size={17} />}
         </button>
-      </div>
+      </label>
 
-      <div className={`model-note ${error ? 'error' : 'ok'}`}>
+      <div className={`model-state ${error ? 'error' : 'ok'}`}>
         {error ? <TriangleAlert size={15} /> : <CheckCircle2 size={15} />}
-        <span>{error || (selectedModel ? formatModelMeta(selectedModel) || selectedModel.id : 'Pronto para responder')}</span>
+        <span>{detailText}</span>
       </div>
     </section>
   );

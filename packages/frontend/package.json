@@ -12,8 +12,8 @@
   "dependencies": {
     "dompurify": "^3.2.6",
     "lucide-react": "^0.468.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
     "remarkable": "^2.0.1"
   },
   "devDependencies": {
