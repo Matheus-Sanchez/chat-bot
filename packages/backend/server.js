@@ -5,6 +5,8 @@ const fs = require('fs');
 const {
   CORS_ORIGIN,
   DEFAULT_MODEL_IDENTIFIER,
+  FRONTEND_HOST,
+  FRONTEND_PORT,
   HOST,
   LM_STUDIO_BASE_URL,
   MAX_REQUEST_BODY_SIZE,
@@ -25,8 +27,78 @@ function parseCorsOrigin(value) {
   return value.split(',').map((origin) => origin.trim()).filter(Boolean);
 }
 
+function getFrontendDistPath() {
+  return path.resolve(__dirname, '../frontend/dist');
+}
+
+function hasFrontendBuild() {
+  return fs.existsSync(getFrontendDistPath());
+}
+
+function getRequestPort(req, fallback) {
+  const hostHeader = req.get('host') || '';
+  const port = Number.parseInt(hostHeader.split(':').at(-1), 10);
+  return Number.isNaN(port) ? fallback : port;
+}
+
+function renderMissingFrontendPage({ backendUrls, frontendUrls }) {
+  const renderLinks = (urls) => urls
+    .map(({ label, url }) => `<li><a href="${url}">${label}: ${url}</a></li>`)
+    .join('');
+
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat LLM Local</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #eef1f3;
+      color: #17211f;
+    }
+    main {
+      width: min(760px, calc(100% - 32px));
+      margin: 48px auto;
+      padding: 24px;
+      border: 1px solid #d7dfdc;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 22px 60px rgba(24, 34, 31, 0.12);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.45rem; }
+    h2 { margin: 22px 0 8px; font-size: 0.92rem; text-transform: uppercase; color: #60706c; }
+    p { color: #60706c; line-height: 1.5; }
+    code {
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: #edf3f1;
+      color: #0b5f59;
+    }
+    ul { padding-left: 20px; line-height: 1.9; }
+    a { color: #0b5f59; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Servidor do Chat LLM esta funcionando.</h1>
+    <p>O build do frontend ainda nao foi encontrado. Para servir a interface por este mesmo endereco, rode <code>npm run serve</code> na raiz do projeto.</p>
+
+    <h2>Frontend em desenvolvimento</h2>
+    <ul>${renderLinks(frontendUrls)}</ul>
+
+    <h2>Backend/API</h2>
+    <ul>${renderLinks(backendUrls)}</ul>
+  </main>
+</body>
+</html>`;
+}
+
 function createApp() {
   const app = express();
+  const frontendDistExists = hasFrontendBuild();
 
   app.use(cors({ origin: parseCorsOrigin(CORS_ORIGIN) }));
   app.use(express.json({ limit: MAX_REQUEST_BODY_SIZE }));
@@ -107,17 +179,35 @@ function createApp() {
     });
   });
 
+  app.get('/api/network', (req, res) => {
+    const backendPort = getRequestPort(req, PORT);
+    const backendUrls = getServerUrls({ host: HOST, port: backendPort });
+    const frontendUrls = frontendDistExists
+      ? backendUrls
+      : getServerUrls({ host: FRONTEND_HOST, port: FRONTEND_PORT });
+
+    res.status(200).json({
+      mode: frontendDistExists ? 'integrated' : 'development',
+      backendUrls,
+      frontendUrls,
+      lmStudioBaseUrl: LM_STUDIO_BASE_URL,
+    });
+  });
+
   app.use('/', chatRoutes);
 
-  const frontendDist = path.resolve(__dirname, '../frontend/dist');
-  if (fs.existsSync(frontendDist)) {
+  const frontendDist = getFrontendDistPath();
+  if (frontendDistExists) {
     app.use(express.static(frontendDist));
     app.get('*', (req, res) => {
       res.sendFile(path.join(frontendDist, 'index.html'));
     });
   } else {
     app.get('/', (req, res) => {
-      res.status(200).send('Servidor do Chat LLM esta funcionando.');
+      const backendPort = getRequestPort(req, PORT);
+      const backendUrls = getServerUrls({ host: HOST, port: backendPort });
+      const frontendUrls = getServerUrls({ host: FRONTEND_HOST, port: FRONTEND_PORT });
+      res.status(200).type('html').send(renderMissingFrontendPage({ backendUrls, frontendUrls }));
     });
   }
 
@@ -138,10 +228,17 @@ if (require.main === module) {
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : PORT;
     const urls = getServerUrls({ host: HOST, port });
+    const frontendUrls = hasFrontendBuild()
+      ? urls
+      : getServerUrls({ host: FRONTEND_HOST, port: FRONTEND_PORT });
 
     console.log('Servidor backend iniciado com sucesso.');
     console.log('Enderecos do backend:');
     for (const { label, url } of urls) {
+      console.log(`  ${label}: ${url}`);
+    }
+    console.log(hasFrontendBuild() ? 'Enderecos do frontend:' : 'Enderecos esperados do frontend dev:');
+    for (const { label, url } of frontendUrls) {
       console.log(`  ${label}: ${url}`);
     }
     console.log('Modo: Streaming habilitado');

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, RefreshCcw, Square, Sun, Trash2 } from 'lucide-react';
+import { ExternalLink, Moon, RefreshCcw, Square, Sun, Trash2 } from 'lucide-react';
 import ChatComposer from './components/ChatComposer';
 import ChatHeader from './components/ChatHeader';
 import ChatWindow from './components/ChatWindow';
@@ -14,7 +14,7 @@ import {
   saveConversation,
   setActiveConversationId as storeActiveConversationId,
 } from './lib/conversationStorage';
-import { fetchModels, streamChat } from './services/chatApiService';
+import { fetchModels, fetchNetworkInfo, streamChat } from './services/chatApiService';
 import './App.css';
 
 const MAX_TEXT_FILE_BYTES = 512 * 1024;
@@ -163,6 +163,7 @@ function App() {
   const [modelError, setModelError] = useState('');
   const [modelNotice, setModelNotice] = useState('');
   const [isModelBusy, setIsModelBusy] = useState(false);
+  const [networkLinks, setNetworkLinks] = useState([]);
   const [theme, setTheme] = useState(getInitialTheme);
   const abortRef = useRef(null);
   const activeConversationIdRef = useRef(initialState.conversation.id);
@@ -246,6 +247,23 @@ function App() {
   useEffect(() => {
     loadModelCatalog();
   }, [loadModelCatalog]);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    fetchNetworkInfo({ signal: abortController.signal })
+      .then((payload) => {
+        const links = Array.isArray(payload.frontendUrls) ? payload.frontendUrls : [];
+        setNetworkLinks(links);
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') {
+          setNetworkLinks([]);
+        }
+      });
+
+    return () => abortController.abort();
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -504,6 +522,23 @@ Pergunta: ${question}`,
           onRefresh={loadModelCatalog}
           onSelectModel={handleSelectModel}
         />
+
+        {networkLinks.length > 0 && (
+          <section className="network-section" aria-label="Links de acesso">
+            <div className="section-title">
+              <ExternalLink size={14} />
+              <span>Acesso</span>
+            </div>
+            <div className="network-links">
+              {networkLinks.map(({ label, url }) => (
+                <a key={`${label}-${url}`} href={url}>
+                  <span>{label}</span>
+                  <small>{url.replace(/^https?:\/\//, '')}</small>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
 
         <ConversationList
           activeConversationId={activeConversationId}

@@ -25,6 +25,11 @@ npm -v
 Se algum comando nao for encontrado, instale ou ajuste o Node.js nesse mesmo
 ambiente antes de continuar.
 
+Se o projeto foi copiado de outra maquina ou de um ambiente Windows, rode
+`npm install` no macOS antes de iniciar. Dependencias nativas do frontend,
+como o SWC usado pelo Vite/React, precisam do binario correto para o sistema
+atual.
+
 O endpoint esperado por padrao e:
 
 ```txt
@@ -100,11 +105,18 @@ npm run dev
 
 Os comandos acima sao os mesmos em Windows PowerShell, macOS, Linux e WSL.
 
-No modo desenvolvimento, abra o frontend do Vite:
+### Desenvolvimento
+
+No modo desenvolvimento, o backend e o frontend rodam em portas separadas. Abra
+o frontend do Vite:
 
 - Frontend local: `http://localhost:5173`
 - Frontend na rede: use o endereco `Network` exibido pelo Vite, por exemplo `http://192.168.1.50:5173`
 - Backend/API: `http://localhost:4000`
+
+O painel lateral da interface tambem mostra os links locais e de rede
+retornados pelo backend, facilitando abrir o chat por outro computador ou
+celular na mesma rede.
 
 Se o `npm run dev` falhar com erro de `concurrently`, rode os dois processos em terminais separados:
 
@@ -118,14 +130,23 @@ npm run dev:frontend
 
 No modo desenvolvimento, o endereco `http://localhost:4000` e apenas a API/backend. A interface fica em `http://localhost:5173` e chama a API pelo proxy do Vite.
 
-Para acessar de outra maquina na rede, abra o endereco de rede exibido pelo Vite. Se quiser servir a interface pelo proprio backend, gere o build antes:
+### Servindo tudo pelo backend
+
+Para usar o Mac como servidor unico de backend, frontend e ponte com o LM
+Studio, rode:
 
 ```bash
-npm run build
-npm start
+npm run serve
 ```
 
-Depois acesse `http://IP-DA-MAQUINA:4000`.
+Esse comando roda o build do frontend e inicia o backend. Depois acesse
+`http://IP-DA-MAQUINA:4000`. Nesse modo, o backend entrega a interface React
+gerada em `packages/frontend/dist`, entao nao e necessario abrir a porta `5173`
+para outros dispositivos.
+
+Se iniciar apenas `npm start` sem existir `packages/frontend/dist`, o backend
+mostra uma pagina simples com os links esperados do frontend em desenvolvimento
+e da API.
 
 No macOS, se o Vite exibir apenas `Local`, confirme que o `.env` tem `FRONTEND_HOST=0.0.0.0` e que o Firewall do macOS permite conexoes para o Node.js. As maquinas tambem precisam estar na mesma rede, sem isolamento de clientes no roteador.
 
@@ -171,6 +192,7 @@ npm run test:lmstudio
 ## Endpoints
 
 - `GET /health`: status do backend e conectividade com o LM Studio
+- `GET /api/network`: links locais e de rede do frontend/backend
 - `GET /models`: modelos LLM locais baixados no LM Studio e modelo ativo
 - `POST /models/load`: valida a selecao de um modelo local sem carrega-lo imediatamente
 - `GET /queue`: estado da fila de mensagens aguardando o LM Studio

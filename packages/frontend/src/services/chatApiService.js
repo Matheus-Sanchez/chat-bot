@@ -129,6 +129,15 @@ export async function fetchModels({ signal } = {}) {
   return response.json();
 }
 
+export async function fetchNetworkInfo({ signal } = {}) {
+  const response = await fetch(apiUrl('/api/network'), { signal });
+  if (!response.ok) {
+    throw new Error(await readError(response, 'Nao foi possivel consultar os enderecos de rede.'));
+  }
+
+  return response.json();
+}
+
 export async function requestModelLoad(modelId, { signal } = {}) {
   const response = await fetch(apiUrl('/models/load'), {
     method: 'POST',

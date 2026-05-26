@@ -33,6 +33,8 @@ const LM_STUDIO_BASE_URL = trimTrailingSlash(
 module.exports = {
     HOST: process.env.HOST || '0.0.0.0',
     PORT: readInt('PORT', 4000, 1),
+    FRONTEND_HOST: process.env.FRONTEND_HOST || process.env.VITE_HOST || process.env.HOST || '0.0.0.0',
+    FRONTEND_PORT: readInt('FRONTEND_PORT', readInt('VITE_PORT', 5173, 1), 1),
     CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
     LM_STUDIO_BASE_URL,
     LM_STUDIO_CHAT_URL: process.env.LM_STUDIO_CHAT_URL || `${LM_STUDIO_BASE_URL}/v1/chat/completions`,
