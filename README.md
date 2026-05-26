@@ -54,7 +54,11 @@ LM_STUDIO_BASE_URL=http://127.0.0.1:1234
 LM_STUDIO_MODEL=auto
 HOST=0.0.0.0
 PORT=4000
+FRONTEND_HOST=0.0.0.0
+FRONTEND_PORT=5173
 ```
+
+`HOST` controla o backend. `FRONTEND_HOST` controla o Vite em desenvolvimento. Para acesso pela rede interna, mantenha ambos como `0.0.0.0`.
 
 `LM_STUDIO_MODEL=auto` usa o primeiro modelo retornado por `/v1/models`. Se quiser fixar um modelo especifico, use o `id` retornado por:
 
@@ -98,7 +102,8 @@ Os comandos acima sao os mesmos em Windows PowerShell, macOS, Linux e WSL.
 
 No modo desenvolvimento, abra o frontend do Vite:
 
-- Frontend: `http://localhost:5174`
+- Frontend local: `http://localhost:5173`
+- Frontend na rede: use o endereco `Network` exibido pelo Vite, por exemplo `http://192.168.1.50:5173`
 - Backend/API: `http://localhost:4000`
 
 Se o `npm run dev` falhar com erro de `concurrently`, rode os dois processos em terminais separados:
@@ -111,7 +116,7 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-No modo desenvolvimento, o endereco `http://localhost:4000` e apenas a API/backend. A interface fica em `http://localhost:5174`.
+No modo desenvolvimento, o endereco `http://localhost:4000` e apenas a API/backend. A interface fica em `http://localhost:5173` e chama a API pelo proxy do Vite.
 
 Para acessar de outra maquina na rede, abra o endereco de rede exibido pelo Vite. Se quiser servir a interface pelo proprio backend, gere o build antes:
 
@@ -121,6 +126,8 @@ npm start
 ```
 
 Depois acesse `http://IP-DA-MAQUINA:4000`.
+
+No macOS, se o Vite exibir apenas `Local`, confirme que o `.env` tem `FRONTEND_HOST=0.0.0.0` e que o Firewall do macOS permite conexoes para o Node.js. As maquinas tambem precisam estar na mesma rede, sem isolamento de clientes no roteador.
 
 ### Resumo por sistema
 

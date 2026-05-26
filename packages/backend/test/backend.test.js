@@ -1,6 +1,7 @@
 const http = require('http');
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { getNetworkAddresses, getServerUrls } = require('../config/networkUrls');
 
 function startServer(handler) {
     const server = http.createServer(handler);
@@ -33,6 +34,30 @@ function messageContentToText(content) {
 
     return '';
 }
+
+test('network URL helper lists usable LAN addresses when bound to all interfaces', () => {
+    const interfaces = {
+        lo0: [{ family: 'IPv4', address: '127.0.0.1', internal: true }],
+        en0: [{ family: 'IPv4', address: '192.168.1.25', internal: false }],
+        awdl0: [{ family: 'IPv6', address: 'fe80::1', internal: false }],
+        bridge0: [{ family: 'IPv4', address: '169.254.10.10', internal: false }],
+    };
+
+    assert.deepEqual(getNetworkAddresses(interfaces), [
+        { name: 'en0', address: '192.168.1.25' },
+    ]);
+
+    assert.deepEqual(getServerUrls({ host: '0.0.0.0', port: 4000, interfaces }), [
+        { label: 'Local', url: 'http://localhost:4000' },
+        { label: 'Rede (en0)', url: 'http://192.168.1.25:4000' },
+    ]);
+});
+
+test('network URL helper keeps loopback-only hosts local', () => {
+    assert.deepEqual(getServerUrls({ host: '127.0.0.1', port: 4000 }), [
+        { label: 'Local', url: 'http://127.0.0.1:4000' },
+    ]);
+});
 
 async function startFakeLmStudio() {
     let activeModel = 'fake-gemma-model';

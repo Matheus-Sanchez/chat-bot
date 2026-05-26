@@ -10,6 +10,7 @@ const {
   MAX_REQUEST_BODY_SIZE,
   PORT,
 } = require('./config/ServerConfig');
+const { getServerUrls } = require('./config/networkUrls');
 const chatRoutes = require('./routes/chat');
 const { chatQueue } = require('./services/chatQueue');
 const {
@@ -133,12 +134,28 @@ function createApp() {
 
 if (require.main === module) {
   const app = createApp();
-  app.listen(PORT, HOST, () => {
+  const server = app.listen(PORT, HOST, () => {
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : PORT;
+    const urls = getServerUrls({ host: HOST, port });
+
     console.log('Servidor backend iniciado com sucesso.');
-    console.log(`Ouvindo em: http://${HOST}:${PORT}`);
+    console.log('Enderecos do backend:');
+    for (const { label, url } of urls) {
+      console.log(`  ${label}: ${url}`);
+    }
     console.log('Modo: Streaming habilitado');
     console.log(`LM Studio: ${LM_STUDIO_BASE_URL}`);
     console.log(`Modelo: ${DEFAULT_MODEL_IDENTIFIER}`);
+  });
+
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`Porta ${PORT} ja esta em uso em ${HOST}. Encerre o processo atual ou altere PORT no .env.`);
+      process.exit(1);
+    }
+
+    throw error;
   });
 }
 
