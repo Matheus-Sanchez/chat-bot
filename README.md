@@ -55,7 +55,7 @@ npm run dev
 
 No modo desenvolvimento, abra o frontend do Vite:
 
-- Frontend: `http://localhost:5173`
+- Frontend: `http://localhost:5174`
 - Backend/API: `http://localhost:4000`
 
 Se o `npm run dev` falhar com erro de `concurrently`, rode os dois processos em terminais separados:
@@ -68,7 +68,7 @@ npm run dev:backend
 npm run dev:frontend
 ```
 
-No modo desenvolvimento, o endereco `http://localhost:4000` e apenas a API/backend. A interface fica em `http://localhost:5173`.
+No modo desenvolvimento, o endereco `http://localhost:4000` e apenas a API/backend. A interface fica em `http://localhost:5174`.
 
 Para acessar de outra maquina na rede, abra o endereco de rede exibido pelo Vite. Se quiser servir a interface pelo proprio backend, gere o build antes:
 

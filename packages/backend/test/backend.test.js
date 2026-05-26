@@ -22,6 +22,18 @@ function closeServer(server) {
     });
 }
 
+function messageContentToText(content) {
+    if (typeof content === 'string') return content;
+
+    if (Array.isArray(content)) {
+        return content
+            .map((part) => (part.type === 'text' ? part.text : '[image]'))
+            .join('\n');
+    }
+
+    return '';
+}
+
 async function startFakeLmStudio() {
     let activeModel = 'fake-gemma-model';
     const stats = {
@@ -121,7 +133,7 @@ async function startFakeLmStudio() {
                 const payload = JSON.parse(body);
                 assert.equal(payload.model, activeModel);
                 assert.equal(payload.stream, true);
-                const prompt = payload.messages.at(-1)?.content || '';
+                const prompt = messageContentToText(payload.messages.at(-1)?.content);
                 const delayMs = prompt.includes('primeira concorrente') ? 150 : 0;
                 let counted = true;
 
@@ -198,6 +210,30 @@ test('backend validates requests and proxies LM Studio streams', { timeout: 1000
         const streamText = await chatResponse.text();
         assert.match(streamText, /"OK"/);
         assert.match(streamText, /\[DONE\]/);
+
+        const imageChatResponse = await fetch(`${backend.url}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [
+                    {
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: 'Descreva a imagem' },
+                            {
+                                type: 'image_url',
+                                image_url: {
+                                    url: 'data:image/png;base64,iVBORw0KGgo=',
+                                },
+                            },
+                        ],
+                    },
+                ],
+            }),
+        });
+        assert.equal(imageChatResponse.status, 200);
+        assert.match(await imageChatResponse.text(), /"OK"/);
+        assert.equal(fakeLmStudio.stats.startedPrompts.at(-1), 'Descreva a imagem\n[image]');
 
         const loadResponse = await fetch(`${backend.url}/models/load`, {
             method: 'POST',

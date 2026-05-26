@@ -17,8 +17,20 @@ import {
 import { fetchModels, streamChat } from './services/chatApiService';
 import './App.css';
 
-const MAX_FILE_BYTES = 512 * 1024;
+const MAX_TEXT_FILE_BYTES = 512 * 1024;
+const MAX_IMAGE_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_DATA_URL_CHARS = 800 * 1024;
+const IMAGE_EDGE_STEPS = [1280, 1024, 768, 640];
+const IMAGE_QUALITY_STEPS = [0.86, 0.76, 0.66];
 const SELECTED_MODEL_STORAGE_KEY = 'chat.selectedModelId';
+const SUPPORTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const SUPPORTED_IMAGE_DATA_URL = /^data:image\/(png|jpe?g|webp);base64,/i;
+const IMAGE_TYPE_BY_EXTENSION = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
 
 const welcomeMessage = {
   id: 'welcome',
@@ -49,6 +61,87 @@ function readFileAsText(file) {
     reader.onerror = () => reject(reader.error);
     reader.readAsText(file);
   });
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function getFileExtension(fileName = '') {
+  return fileName.split('.').pop()?.toLowerCase() || '';
+}
+
+function getSupportedImageType(file) {
+  if (SUPPORTED_IMAGE_TYPES.has(file?.type)) return file.type;
+  return IMAGE_TYPE_BY_EXTENSION[getFileExtension(file?.name)] || '';
+}
+
+function isImageLikeFile(file) {
+  return Boolean(file?.type?.startsWith('image/') || getSupportedImageType(file));
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Nao foi possivel ler a imagem selecionada.'));
+    image.src = dataUrl;
+  });
+}
+
+function renderImageDataUrl(image, maxEdge, quality) {
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
+  const scale = Math.min(1, maxEdge / Math.max(naturalWidth, naturalHeight));
+  const width = Math.max(1, Math.round(naturalWidth * scale));
+  const height = Math.max(1, Math.round(naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext('2d');
+  if (!context) {
+    throw new Error('Nao foi possivel preparar a imagem para envio.');
+  }
+
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+async function readImageAsPromptDataUrl(file) {
+  if (!getSupportedImageType(file)) {
+    throw new Error('Use uma imagem PNG, JPEG ou WebP.');
+  }
+
+  if (file.size > MAX_IMAGE_FILE_BYTES) {
+    throw new Error('A imagem selecionada e maior que 5 MB.');
+  }
+
+  const sourceDataUrl = await readFileAsDataUrl(file);
+  if (sourceDataUrl.length <= MAX_IMAGE_DATA_URL_CHARS && SUPPORTED_IMAGE_DATA_URL.test(sourceDataUrl)) {
+    return sourceDataUrl;
+  }
+
+  const image = await loadImage(sourceDataUrl);
+
+  for (const maxEdge of IMAGE_EDGE_STEPS) {
+    for (const quality of IMAGE_QUALITY_STEPS) {
+      const encodedDataUrl = renderImageDataUrl(image, maxEdge, quality);
+      if (encodedDataUrl.length <= MAX_IMAGE_DATA_URL_CHARS) {
+        return encodedDataUrl;
+      }
+    }
+  }
+
+  throw new Error('Nao consegui compactar essa imagem para envio. Tente uma imagem menor.');
 }
 
 function getInitialTheme() {
@@ -226,12 +319,41 @@ function App() {
       };
     }
 
-    if (selectedFile.size > MAX_FILE_BYTES) {
+    const question = trimmedDraft || 'Resuma o conteudo do arquivo de forma objetiva.';
+    const imageType = getSupportedImageType(selectedFile);
+
+    if (imageType) {
+      const imageDataUrl = await readImageAsPromptDataUrl(selectedFile);
+      const imageQuestion = trimmedDraft || 'Descreva a imagem de forma objetiva.';
+
+      return {
+        displayPrompt: trimmedDraft
+          ? `${trimmedDraft}\n\nImagem anexada: ${selectedFile.name}`
+          : `Analise a imagem: ${selectedFile.name}`,
+        apiPrompt: [
+          {
+            type: 'text',
+            text: `${imageQuestion}\n\nImagem anexada: ${selectedFile.name}`,
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: imageDataUrl,
+            },
+          },
+        ],
+      };
+    }
+
+    if (isImageLikeFile(selectedFile)) {
+      throw new Error('Use uma imagem PNG, JPEG ou WebP.');
+    }
+
+    if (selectedFile.size > MAX_TEXT_FILE_BYTES) {
       throw new Error('O arquivo selecionado e maior que 512 KB.');
     }
 
     const fileContent = await readFileAsText(selectedFile);
-    const question = trimmedDraft || 'Resuma o conteudo do arquivo de forma objetiva.';
 
     return {
       displayPrompt: trimmedDraft

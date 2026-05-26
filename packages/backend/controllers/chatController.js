@@ -5,6 +5,78 @@ const { chatQueue } = require('../services/chatQueue');
 const { MAX_CONTEXT_MESSAGES, MAX_MESSAGE_CHARS } = require('../config/ServerConfig');
 
 const ALLOWED_ROLES = new Set(['system', 'user', 'assistant']);
+const SUPPORTED_IMAGE_DATA_URL = /^data:image\/(png|jpe?g|webp);base64,/i;
+
+function validateTextContent(content, index) {
+    if (typeof content !== 'string' || !content.trim()) {
+        return `A mensagem ${index} precisa conter content em texto.`;
+    }
+
+    if (content.length > MAX_MESSAGE_CHARS) {
+        return `A mensagem ${index} excede o limite de ${MAX_MESSAGE_CHARS} caracteres.`;
+    }
+
+    return null;
+}
+
+function validateContentParts(content, index) {
+    if (!Array.isArray(content) || content.length === 0) {
+        return `A mensagem ${index} precisa conter content em texto ou partes multimodais.`;
+    }
+
+    let hasContent = false;
+    let textLength = 0;
+
+    for (const [partIndex, part] of content.entries()) {
+        if (!part || typeof part !== 'object') {
+            return `A parte ${partIndex} da mensagem ${index} precisa ser um objeto.`;
+        }
+
+        if (part.type === 'text') {
+            if (typeof part.text !== 'string') {
+                return `A parte ${partIndex} da mensagem ${index} precisa conter text.`;
+            }
+
+            textLength += part.text.length;
+            hasContent = hasContent || Boolean(part.text.trim());
+
+            if (textLength > MAX_MESSAGE_CHARS) {
+                return `A mensagem ${index} excede o limite de ${MAX_MESSAGE_CHARS} caracteres de texto.`;
+            }
+
+            continue;
+        }
+
+        if (part.type === 'image_url') {
+            const imageUrl = part.image_url?.url;
+
+            if (typeof imageUrl !== 'string' || !SUPPORTED_IMAGE_DATA_URL.test(imageUrl)) {
+                return `A parte ${partIndex} da mensagem ${index} precisa conter uma imagem PNG, JPEG ou WebP em data URL.`;
+            }
+
+            hasContent = true;
+            continue;
+        }
+
+        return `A parte ${partIndex} da mensagem ${index} possui tipo invalido. Use text ou image_url.`;
+    }
+
+    return hasContent
+        ? null
+        : `A mensagem ${index} precisa conter content em texto ou imagem.`;
+}
+
+function validateMessageContent(content, index) {
+    if (typeof content === 'string') {
+        return validateTextContent(content, index);
+    }
+
+    if (Array.isArray(content)) {
+        return validateContentParts(content, index);
+    }
+
+    return `A mensagem ${index} precisa conter content em texto ou partes multimodais.`;
+}
 
 function validateMessages(messages) {
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -20,13 +92,8 @@ function validateMessages(messages) {
             return `A mensagem ${index} possui role inválida. Use system, user ou assistant.`;
         }
 
-        if (typeof message.content !== 'string' || !message.content.trim()) {
-            return `A mensagem ${index} precisa conter content em texto.`;
-        }
-
-        if (message.content.length > MAX_MESSAGE_CHARS) {
-            return `A mensagem ${index} excede o limite de ${MAX_MESSAGE_CHARS} caracteres.`;
-        }
+        const contentError = validateMessageContent(message.content, index);
+        if (contentError) return contentError;
     }
 
     return null;

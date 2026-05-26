@@ -2,14 +2,22 @@ import { useEffect, useRef } from 'react';
 import MessageBubble from './MessageBubble';
 
 function ChatWindow({ messages, isStreaming }) {
+  const windowRef = useRef(null);
   const endRef = useRef(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const chatWindow = windowRef.current;
+    if (!chatWindow || !endRef.current) return;
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
   }, [messages, isStreaming]);
 
   return (
-    <main className="chat-window">
+    <main className="chat-window" ref={windowRef}>
       <div className="message-list">
         {messages.map((message) => (
           <MessageBubble

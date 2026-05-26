@@ -21,6 +21,16 @@ const ACCEPTED_TEXT_FILES = [
   '.yml',
 ].join(',');
 
+const ACCEPTED_IMAGE_FILES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+].join(',');
+
 function FileInput({ disabled, onFileSelect }) {
   const fileInputRef = useRef(null);
 
@@ -34,7 +44,7 @@ function FileInput({ disabled, onFileSelect }) {
       <input
         ref={fileInputRef}
         type="file"
-        accept={ACCEPTED_TEXT_FILES}
+        accept={`${ACCEPTED_TEXT_FILES},${ACCEPTED_IMAGE_FILES}`}
         disabled={disabled}
         onChange={(event) => onFileSelect(event.target.files?.[0] || null)}
         hidden
@@ -44,8 +54,8 @@ function FileInput({ disabled, onFileSelect }) {
         type="button"
         onClick={openFilePicker}
         disabled={disabled}
-        title="Anexar arquivo"
-        aria-label="Anexar arquivo"
+        title="Anexar arquivo ou imagem"
+        aria-label="Anexar arquivo ou imagem"
       >
         <Paperclip size={19} />
       </button>
