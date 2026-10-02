@@ -270,6 +270,16 @@ async function prepareModelForChat(modelId, options = {}) {
         throw new Error(`Model "${requestedModelId}" was not found among local LM Studio LLM models.`);
     }
 
+    if (model.loaded) {
+        setActiveModelIdentifier(model.id);
+        return {
+            status: 'already-loaded',
+            model,
+            activeModel: model.id,
+            unloadedInstances: [],
+        };
+    }
+
     const unloadedInstances = await unloadLoadedLlmModels(options);
     const loadResult = await loadModel(requestedModelId, options);
 
